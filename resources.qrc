@@ -1,0 +1,10 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file>map.qml</file>
+    </qresource>
+    <qresource prefix="/data">
+        <file>data/simple_map.svg</file>
+<file>data/rus_simple_highcharts.geo.json</file>
+    </qresource>
+</RCC>
