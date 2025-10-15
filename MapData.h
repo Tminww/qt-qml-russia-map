@@ -34,15 +34,14 @@ signals:
     void selectedRegionChanged();
 
 private:
-    void createTestData();
     void parseGeoJSON(const QJsonDocument &doc);
-    QVariantList coordinatesToPath(const QJsonArray &coordinates, 
-                                    double minX, double maxX, 
-                                    double minY, double maxY);
-    void findBounds(const QJsonArray &coordinates, 
-                    double &minX, double &maxX, 
+    QVariantList coordinatesToPath(const QJsonArray &coordinates,
+                                   double minX, double maxX,
+                                   double minY, double maxY);
+    void findBounds(const QJsonArray &coordinates,
+                    double &minX, double &maxX,
                     double &minY, double &maxY);
-    
+
     QVariantList m_regions;
     QVariantMap m_regionColors;
     QString m_selectedRegion;

@@ -1,122 +1,436 @@
-# Карта России - Демо приложение Qt5
+# MapComponent - Переиспользуемый компонент карты России
 
-Интерактивное приложение для работы с картой России, реализованное на Qt5 с C++11. Поддерживает два режима отображения и взаимодействия.
+## Описание
 
-## Возможности
+`MapComponent.qml` - это отдельный QML компонент для отображения интерактивной карты России, который можно использовать как в чистых QML приложениях, так и в Qt Widgets через `QQuickWidget`.
 
-### Режим 1: QGraphicsView + SVG карта
+## Возможности компонента
 
-- Отображение SVG карты России с отдельными регионами
-- Интерактивная карта с возможностью клика по регионам
-- Дерево регионов слева для навигации
-- Подсветка выбранных регионов
-- Масштабирование и панорамирование карты
-- Автоматическое приближение к выбранному региону
+- ✅ Отображение регионов России из GeoJSON
+- ✅ Интерактивные клики по регионам
+- ✅ Отслеживание наведения мыши
+- ✅ Изменение цветов регионов
+- ✅ Выделение выбранного региона
+- ✅ Настраиваемые цвета и размеры
+- ✅ Сигналы для обработки событий
 
-### Режим 2: QML + Canvas/Shapes
-
-- Современный QML интерфейс с Qt Quick Shapes
-- C++ backend с Q_PROPERTY для управления состоянием
-- Динамическое изменение цветов регионов
-- Синхронизация между деревом и картой
-- Анимации и переходы
-
-## Технологии
-
-- **Qt5** с поддержкой C++11
-- **QGraphicsView/QGraphicsScene** для SVG отображения
-- **QML/Qt Quick** для современного интерфейса
-- **QXmlStreamReader** для парсинга SVG
-- **QTreeWidget** для навигации по регионам
-- **Qt Quick Shapes** для векторной графики в QML
-
-## Структура проекта
+## Структура файлов
 
 ```
 qt-map-demo/
-├── MapDemo.pro          # Файл проекта Qt
-├── main.cpp             # Основной файл приложения
-├── mapwidget.h          # Заголовочный файл виджета карты
-├── mapwidget.cpp        # Реализация виджета карты
-├── mapbackend.h         # C++ backend для QML
-├── mapbackend.cpp       # Реализация backend
-├── russia_map.svg       # SVG карта России
-├── map.qml              # QML интерфейс
-├── resources.qrc        # Файл ресурсов
-└── README.md            # Документация
+├── MapComponent.qml           # Основной компонент карты (переиспользуемый)
+├── map.qml                    # Пример использования в QML приложении
+├── widget_map_example.h       # Пример использования в Qt Widgets
+├── mapdata.h/cpp              # C++ backend для работы с данными
+├── main.cpp                   # Точка входа приложения
+└── resources.qrc              # Ресурсы Qt
 ```
 
-## Сборка и запуск
+## Использование в QML приложении
 
-### Требования
+### Базовое использование
 
-- Qt5 (версия 5.12 или выше)
-- Компилятор с поддержкой C++11
-- CMake или qmake
+```qml
+import QtQuick 2.12
 
-### Сборка через qmake
-
-```bash
-qmake MapDemo.pro
-make
+Item {
+    MapComponent {
+        id: myMap
+        anchors.fill: parent
+        
+        mapData: myMapDataObject  // Объект MapData из C++
+        
+        onRegionClicked: {
+            console.log("Клик:", regionId, regionName)
+        }
+    }
+}
 ```
 
-### Сборка через CMake (если используется)
+### Полный пример с обработкой событий
 
-```bash
-mkdir build
-cd build
-cmake ..
-make
+```qml
+MapComponent {
+    id: mapComponent
+    width: 1000
+    height: 800
+    
+    // Свойства
+    mapData: mapDataBackend
+    selectedRegion: "moscow"
+    canvasWidth: 1200
+    canvasHeight: 1000
+    backgroundColor: "#ffffff"
+    selectedRegionColor: "#e74c3c"
+    
+    // События
+    onRegionClicked: {
+        console.log("Выбран регион:", regionName, "(ID:", regionId, ")")
+        // Ваша логика обработки
+    }
+    
+    onRegionHovered: {
+        tooltipText.text = regionName
+    }
+    
+    onRegionExited: {
+        tooltipText.text = ""
+    }
+}
 ```
 
-### Запуск
+## Использование в Qt Widgets приложении
 
-```bash
-./bin/MapDemo
+### Подключение через QQuickWidget
+
+```cpp
+#include <QQuickWidget>
+#include <QQmlContext>
+#include "mapdata.h"
+
+// В конструкторе вашего виджета:
+QQuickWidget *quickWidget = new QQuickWidget(this);
+
+// Создаем backend
+MapData *mapData = new MapData(this);
+mapData->loadGeoJSON("data/rus_simple_highcharts.geo.json");
+
+// Устанавливаем контекст
+quickWidget->rootContext()->setContextProperty("mapData", mapData);
+
+// Загружаем компонент
+quickWidget->setSource(QUrl("qrc:/MapComponent.qml"));
+quickWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
+
+// Добавляем в layout
+layout->addWidget(quickWidget);
 ```
 
-## Использование
+### Обработка событий от компонента
 
-1. **Переключение режимов**: Используйте кнопки "QGraphicsView режим" и "QML режим" в верхней части приложения.
+```cpp
+// Получаем root объект
+QObject *rootObject = quickWidget->rootObject();
 
-2. **QGraphicsView режим**:
+// Подключаем сигналы
+connect(rootObject, SIGNAL(regionClicked(QString, QString)),
+        this, SLOT(onRegionClicked(QString, QString)));
 
-   - Кликните по региону на карте или в дереве для его выбора
-   - Используйте колесо мыши для масштабирования
-   - Перетаскивайте для панорамирования
-   - Выбранный регион подсвечивается синим цветом
+connect(rootObject, SIGNAL(regionHovered(QString, QString)),
+        this, SLOT(onRegionHovered(QString, QString)));
 
-3. **QML режим**:
-   - Регионы автоматически меняют цвет каждые 3 секунды
-   - Кликните по региону в дереве для его выбора
-   - Используйте кнопки "Сбросить выделение" и "Симулировать обновление"
+// Слоты для обработки
+void MyWidget::onRegionClicked(const QString &regionId, const QString &regionName)
+{
+    qDebug() << "Клик по региону:" << regionName;
+    // Ваша логика
+}
+```
 
-## Особенности реализации
+### Вызов методов компонента из C++
 
-### QGraphicsView подход
+```cpp
+// Перерисовать карту
+QMetaObject::invokeMethod(rootObject, "repaint");
 
-- Парсинг SVG через QXmlStreamReader
-- Создание отдельных QGraphicsSvgItem для каждого региона
-- Обработка событий мыши для интерактивности
-- Использование QGraphicsColorizeEffect для подсветки
+// Очистить выделение
+QMetaObject::invokeMethod(rootObject, "clearSelection");
 
-### QML подход
+// Изменить свойство
+rootObject->setProperty("selectedRegion", "spb");
+```
 
-- Qt Quick Shapes для векторной графики
-- C++ backend с Q_PROPERTY для управления состоянием
-- QML States и Transitions для анимаций
-- Автоматическое обновление через QTimer
+## API компонента
 
-## Расширение функциональности
+### Свойства
 
-Для добавления новых возможностей:
+| Свойство | Тип | По умолчанию | Описание |
+|----------|-----|--------------|----------|
+| `mapData` | var | null | Объект MapData с данными карты |
+| `selectedRegion` | string | "" | ID выбранного региона |
+| `canvasWidth` | int | 1200 | Ширина canvas для рисования |
+| `canvasHeight` | int | 1000 | Высота canvas для рисования |
+| `backgroundColor` | color | "#ffffff" | Цвет фона |
+| `borderColor` | color | "#bdc3c7" | Цвет границы компонента |
+| `borderWidth` | int | 1 | Толщина границы компонента |
+| `defaultRegionColor` | color | "#e0e0e0" | Цвет регионов по умолчанию |
+| `selectedRegionColor` | color | "#e74c3c" | Цвет выбранного региона |
+| `strokeColor` | color | "#34495e" | Цвет контуров регионов |
+| `strokeWidth` | real | 1 | Толщина контуров |
 
-1. **Новые регионы**: Добавьте path элементы в `russia_map.svg` и обновите списки в коде
-2. **Дополнительные данные**: Расширьте `MapBackend` новыми свойствами
-3. **Стилизация**: Измените CSS в SVG или стили в QML
-4. **Анимации**: Добавьте QPropertyAnimation в C++ или transitions в QML
+### Сигналы
+
+| Сигнал | Параметры | Описание |
+|--------|-----------|----------|
+| `regionClicked` | `string regionId`, `string regionName` | Испускается при клике на регион |
+| `regionHovered` | `string regionId`, `string regionName` | Испускается при наведении на регион |
+| `regionExited` | - | Испускается когда курсор покидает регион |
+
+### Методы
+
+| Метод | Описание |
+|-------|----------|
+| `repaint()` | Принудительная перерисовка карты |
+| `clearSelection()` | Сброс выделения региона |
+
+## Пример полного приложения на Qt Widgets
+
+Смотрите файл `widget_map_example.h` для полного примера интеграции с Qt Widgets.
+
+Основные шаги:
+
+1. **Создать QQuickWidget**
+2. **Создать и настроить MapData backend**
+3. **Установить контекст для QML**
+4. **Загрузить MapComponent.qml**
+5. **Подключить сигналы для обработки событий**
+
+```cpp
+// Минимальный пример
+QQuickWidget *mapWidget = new QQuickWidget(this);
+MapData *mapData = new MapData(this);
+
+mapData->loadGeoJSON("data/rus_simple_highcharts.geo.json");
+mapWidget->rootContext()->setContextProperty("mapData", mapData);
+mapWidget->setSource(QUrl("qrc:/MapComponent.qml"));
+
+// Обработка кликов
+QObject *root = mapWidget->rootObject();
+connect(root, SIGNAL(regionClicked(QString,QString)),
+        this, SLOT(handleRegionClick(QString,QString)));
+```
+
+## Работа с данными карты (MapData)
+
+### C++ API
+
+```cpp
+// Загрузка данных
+mapData->loadGeoJSON("path/to/file.json");
+
+// Выделение региона цветом
+mapData->highlightRegion("moscow", "#ff0000");
+
+// Установка выбранного региона
+mapData->setSelectedRegion("spb");
+
+// Очистка всех выделений
+mapData->clearHighlights();
+
+// Получение данных
+QVariantList regions = mapData->regions();
+QString selected = mapData->selectedRegion();
+```
+
+### Подключение к сигналам MapData
+
+```cpp
+connect(mapData, &MapData::regionsChanged,
+        this, &MyClass::onRegionsLoaded);
+
+connect(mapData, &MapData::selectedRegionChanged,
+        this, &MyClass::onSelectionChanged);
+
+connect(mapData, &MapData::regionColorsChanged,
+        this, &MyClass::onColorsChanged);
+```
+
+## Настройка внешнего вида
+
+### Изменение цветовой схемы
+
+```qml
+MapComponent {
+    defaultRegionColor: "#f0f0f0"      // Светло-серый фон
+    selectedRegionColor: "#3498db"     // Синий для выбранного
+    strokeColor: "#2c3e50"             // Темные границы
+    strokeWidth: 1.5                    // Толще границы
+    backgroundColor: "#ecf0f1"          // Светлый фон
+}
+```
+
+### Изменение размеров
+
+```qml
+MapComponent {
+    canvasWidth: 1500
+    canvasHeight: 1200
+    
+    // Или масштабировать под родителя
+    anchors.fill: parent
+}
+```
+
+## Обработка кликов - примеры использования
+
+### Показать информацию о регионе
+
+```qml
+MapComponent {
+    id: map
+    
+    onRegionClicked: {
+        infoDialog.regionId = regionId
+        infoDialog.regionName = regionName
+        infoDialog.open()
+    }
+}
+
+Dialog {
+    id: infoDialog
+    property string regionId
+    property string regionName
+    
+    title: "Информация о регионе"
+    Text {
+        text: "Регион: " + infoDialog.regionName + 
+              "\nID: " + infoDialog.regionId
+    }
+}
+```
+
+### Выделить регион при клике
+
+```qml
+MapComponent {
+    id: map
+    
+    onRegionClicked: {
+        // Изменяем цвет региона
+        mapData.highlightRegion(regionId, "#e74c3c")
+        
+        // Обновляем выделение
+        selectedRegion = regionId
+    }
+}
+```
+
+### Загрузить данные о регионе с сервера
+
+```cpp
+void MyWidget::onRegionClicked(const QString &regionId, const QString &regionName)
+{
+    qDebug() << "Загружаем данные для региона:" << regionName;
+    
+    // Создаем запрос к API
+    QNetworkRequest request(QUrl("https://api.example.com/regions/" + regionId));
+    
+    QNetworkReply *reply = networkManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, reply, regionName]() {
+        if (reply->error() == QNetworkReply::NoError) {
+            QByteArray data = reply->readAll();
+            // Обрабатываем данные
+            showRegionInfo(regionName, data);
+        }
+        reply->deleteLater();
+    });
+}
+```
+
+## Тестовый режим
+
+Если GeoJSON файл не загружается, компонент автоматически создаст тестовые данные с несколькими регионами для демонстрации функциональности.
+
+## Требования
+
+- **Qt 5.12** или выше
+- **Qt Quick** модули
+- **C++11** или выше
+- Модули: `QtQuick`, `QtQuick.Controls`, `QtQml`
+
+## Файлы для добавления в проект
+
+### Обязательные файлы
+
+1. `MapComponent.qml` - компонент карты
+2. `mapdata.h` - заголовочный файл backend
+3. `mapdata.cpp` - реализация backend
+4. `data/rus_simple_highcharts.geo.json` - данные карты
+
+### Дополнительно для примеров
+
+5. `map.qml` - пример QML приложения
+6. `widget_map_example.h` - пример Qt Widgets
+7. `main.cpp` - точка входа
+
+### Обновление .pro файла
+
+```qmake
+QT += core qml quick widgets
+
+SOURCES += \
+    main.cpp \
+    mapdata.cpp
+
+HEADERS += \
+    mapdata.h
+
+RESOURCES += \
+    resources.qrc
+```
+
+### Обновление resources.qrc
+
+```xml
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource>
+        <file>MapComponent.qml</file>
+        <file>map.qml</file>
+    </qresource>
+    <qresource prefix="/data">
+        <file>data/rus_simple_highcharts.geo.json</file>
+    </qresource>
+</RCC>
+```
+
+## Отладка
+
+### Включение консольных сообщений
+
+Компонент выводит отладочную информацию в консоль:
+
+```
+=== onPaint вызван ===
+Canvas размер: 1200 x 1000
+Регионов: 85
+Первый регион: Москва и Московская область
+Нарисовано путей: 85
+```
+
+### Проверка загрузки данных
+
+```qml
+Component.onCompleted: {
+    console.log("MapComponent готов")
+    console.log("Регионов загружено:", mapData ? mapData.regions.length : 0)
+}
+```
+
+### Визуальная отладка
+
+Если регионы не отображаются:
+
+1. Проверьте, что `mapData` установлен
+2. Проверьте загрузку GeoJSON файла
+3. Проверьте размеры canvas (`canvasWidth`, `canvasHeight`)
+4. Убедитесь, что координаты нормализованы правильно
+
+## Производительность
+
+- Компонент оптимизирован для отображения до 100 регионов
+- Использует алгоритм ray-casting для определения кликов
+- Перерисовка происходит только при изменении данных
 
 ## Лицензия
 
-Этот проект создан в образовательных целях. Свободно используйте и модифицируйте код.
+Проект создан в образовательных целях. Свободно используйте и модифицируйте код.
+
+## Поддержка
+
+При возникновении проблем проверьте:
+
+1. Версию Qt (требуется 5.12+)
+2. Наличие всех необходимых модулей
+3. Правильность путей к ресурсам
+4. Корректность формата GeoJSON данных

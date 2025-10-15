@@ -134,6 +134,7 @@ ApplicationWindow {
                 border.color: "#bdc3c7"
                 border.width: 1
                 
+
                 ScrollView {
                     anchors.fill: parent
                     anchors.margins: 10
@@ -143,6 +144,12 @@ ApplicationWindow {
                         id: mapCanvas
                         width: 1200
                         height: 1000
+
+                        property var regionPaths: []
+                        // Сигналы
+                        signal regionClicked(string regionId, string regionName)
+                        signal regionHovered(string regionId, string regionName)
+                        signal regionExited()
                         
                         onPaint: {
                             console.log("=== onPaint вызван ===")
@@ -164,7 +171,8 @@ ApplicationWindow {
                                 return
                             }
                             
-                            
+                            // Очищаем информацию о путях
+                            regionPaths = []
                             // Рисуем каждый регион
                             var drawnCount = 0
                             for (var i = 0; i < mapData.regions.length; i++) {
@@ -187,7 +195,14 @@ ApplicationWindow {
                                 
                                 // Рисуем все пути региона
                                 for (var j = 0; j < paths.length; j++) {
-                                    drawPath(ctx, paths[j], fillColor)
+                                    var path2D = drawPath(ctx, paths[j], fillColor)
+                                    if (path2D) {
+                                        regionPaths.push({
+                                            id: region.id,
+                                            name: region.name,
+                                            path: path2D
+                                        })
+                                    }
                                     drawnCount++
                                 }
                             }
@@ -209,7 +224,7 @@ ApplicationWindow {
                             
                             // Парсим SVG путь вручную
                             var tokens = pathString.replace(/([MLZ])/g, "|$1 ").split("|")
-                            var pointCount = 0
+                            var hasPoints = false
                             
                             for (var i = 0; i < tokens.length; i++) {
                                 var token = tokens[i].trim()
@@ -222,38 +237,114 @@ ApplicationWindow {
                                     var x = parseFloat(parts[1])
                                     var y = parseFloat(parts[2])
                                     ctx.moveTo(x, y)
-                                    pointCount++
-                                    
-                                    if (i === 0) {
-                                        console.log("Первая точка: M", x, y)
-                                    }
+                                    hasPoints = true
                                 } else if (cmd === 'L' && parts.length >= 3) {
                                     var x = parseFloat(parts[1])
                                     var y = parseFloat(parts[2])
                                     ctx.lineTo(x, y)
-                                    pointCount++
+                                    hasPoints = true
                                 } else if (cmd === 'Z') {
                                     ctx.closePath()
                                 }
                             }
                             
-                            if (pointCount > 0) {
+                            if (hasPoints = true) {
                                 ctx.fill()
                                 ctx.stroke()
+                                return pathString
                             } else {
                                 console.log("Не найдено точек в пути!")
                             }
+                            return null
+                        }
+                        // Обработка кликов по карте
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            
+                            onClicked: {
+                                var clickedRegion = mapCanvas.getRegionAtPoint(mouse.x, mouse.y)
+                                if (clickedRegion) {
+                                    mapData.selectedRegion = clickedRegion.id
+                                    mapCanvas.requestPaint()
+                                }
+                            }
+                            
+                            onPositionChanged: {
+                                var hoveredRegion = mapCanvas.getRegionAtPoint(mouse.x, mouse.y)
+                                if (hoveredRegion) {
+                                    cursorShape = Qt.PointingHandCursor
+                                } else {
+                                    cursorShape = Qt.ArrowCursor
+                                }
+                            }
+                            
+                            onExited: {
+                                cursorShape = Qt.ArrowCursor
+                            }
                         }
                         
+                        // Функция для определения региона по координатам клика
+                        function getRegionAtPoint(x, y) {
+                            // Простая проверка: проходим по всем регионам в обратном порядке
+                            // (последние нарисованные сверху)
+                            for (var i = regionPaths.length - 1; i >= 0; i--) {
+                                var regionInfo = regionPaths[i]
+                                
+                                // Упрощенная проверка через bounding box
+                                // В идеале нужна точная проверка point-in-polygon
+                                if (isPointInRegion(x, y, regionInfo.path)) {
+                                    return regionInfo
+                                }
+                            }
+                            return null
+                        }
+                        
+                        // Упрощенная проверка точки в регионе через парсинг пути
+                        function isPointInRegion(px, py, pathString) {
+                            if (!pathString) return false
+                            
+                            var tokens = pathString.replace(/([MLZ])/g, "|$1 ").split("|")
+                            var points = []
+                            
+                            for (var i = 0; i < tokens.length; i++) {
+                                var token = tokens[i].trim()
+                                if (!token) continue
+                                
+                                var parts = token.split(/\s+/)
+                                var cmd = parts[0]
+                                
+                                if ((cmd === 'M' || cmd === 'L') && parts.length >= 3) {
+                                    var x = parseFloat(parts[1])
+                                    var y = parseFloat(parts[2])
+                                    points.push({x: x, y: y})
+                                }
+                            }
+                            
+                            if (points.length < 3) return false
+                            
+                            // Алгоритм ray casting для проверки точки в полигоне
+                            var inside = false
+                            for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
+                                var xi = points[i].x, yi = points[i].y
+                                var xj = points[j].x, yj = points[j].y
+                                
+                                var intersect = ((yi > py) !== (yj > py))
+                                    && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)
+                                if (intersect) inside = !inside
+                            }
+                            
+                            return inside
+                        }
                         Connections {
                             target: mapData
-                            function onRegionsChanged() {
+                            onRegionsChanged: {
                                 mapCanvas.requestPaint()
                             }
-                            function onRegionColorsChanged() {
+                            onRegionColorsChanged: {
                                 mapCanvas.requestPaint()
                             }
-                            function onSelectedRegionChanged() {
+                            onSelectedRegionChanged: {
                                 mapCanvas.requestPaint()
                             }
                         }

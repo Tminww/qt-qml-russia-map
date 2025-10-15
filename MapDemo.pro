@@ -1,4 +1,4 @@
-QT += core qml quick widgets
+QT += core qml quick widgets quickwidgets
 
 CONFIG += c++11
 
@@ -11,7 +11,8 @@ SOURCES += \
     mapdata.cpp
 
 HEADERS += \
-    mapdata.h
+    mapdata.h \
+    widget_map_example.h
 
 # QML файлы
 RESOURCES += \
