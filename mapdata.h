@@ -28,7 +28,7 @@ public:
 signals:
     void regionsChanged();
     void regionStatusChanged(const QString &regionId, const QString &regionStatus);
-    void selectedRegionChanged(const QString &regionId);
+    void selectedRegionChanged();
 
 private:
     void parseGeoJSON(const QJsonDocument &doc);

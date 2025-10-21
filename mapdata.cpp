@@ -61,6 +61,8 @@ void MapData::parseGeoJSON(const QJsonDocument &doc)
 
     qDebug() << "Границы координат: X[" << minX << "," << maxX << "] Y[" << minY << "," << maxY << "]";
 
+
+
     // Второй проход - создаем регионы
     for (const QJsonValue &value : features)
     {
@@ -155,14 +157,14 @@ QVariantList MapData::coordinatesToPath(const QJsonArray &coordinates,
                                         double minY, double maxY)
 {
     QVariantList paths;
-
     // Размеры целевого canvas
     const double targetWidth = 1000.0;
-    const double targetHeight = 800.0;
-    const double padding = 50.0;
+    const double targetHeight = 700.0;
+    const double padding = 0.0;
 
     double rangeX = maxX - minX;
     double rangeY = maxY - minY;
+
 
     if (rangeX == 0 || rangeY == 0)
     {
@@ -205,7 +207,7 @@ QVariantList MapData::coordinatesToPath(const QJsonArray &coordinates,
                 double y = coordArray[1].toDouble();
 
                 // Нормализуем и масштабируем координаты
-                double normalizedX = (x - minX) * scale + padding;
+                double normalizedX = (x - minX) * scale + padding ;
                 // Инвертируем Y, так как SVG координаты идут сверху вниз
                 double normalizedY = targetHeight - ((y - minY) * scale + padding);
 
@@ -237,8 +239,7 @@ void MapData::setSelectedRegion(const QString &regionId)
     {
         m_selectedRegion = regionId;
         // Нужно регион добавлять в конец, чтобы он отрисовывалс поверх всех
-        emit selectedRegionChanged(regionId);
+        emit selectedRegionChanged();
         qDebug() << "Выбран регион:" << regionId;
     }
 }
-

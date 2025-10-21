@@ -37,11 +37,11 @@ RESOURCES += \
 QML_IMPORT_PATH = .
 
 # Папки для сборки
-DESTDIR = bin
-OBJECTS_DIR = build/obj
-MOC_DIR = build/moc
-RCC_DIR = build/rcc
-UI_DIR = build/ui
+DESTDIR = .bin
+OBJECTS_DIR = .build/obj
+MOC_DIR = .build/moc
+RCC_DIR = .build/rcc
+UI_DIR = .build/ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin
