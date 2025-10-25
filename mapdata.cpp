@@ -5,11 +5,11 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QtMath>
+#include <QRegularExpression>
 
 MapData::MapData(QObject *parent)
     : QObject(parent), m_selectedRegion("")
 {
-
 }
 
 void MapData::loadGeoJSON(const QString &filePath)
@@ -61,8 +61,6 @@ void MapData::parseGeoJSON(const QJsonDocument &doc)
 
     qDebug() << "Границы координат: X[" << minX << "," << maxX << "] Y[" << minY << "," << maxY << "]";
 
-
-
     // Второй проход - создаем регионы
     for (const QJsonValue &value : features)
     {
@@ -103,7 +101,6 @@ void MapData::parseGeoJSON(const QJsonDocument &doc)
             status = "danger";
         }
 
-
         QVariantMap region;
         region["name"] = name;
         region["id"] = hcKey;
@@ -112,15 +109,11 @@ void MapData::parseGeoJSON(const QJsonDocument &doc)
         region["status"] = status;
 
         m_regions.append(region);
-
-
-
     }
 
     qDebug() << "Всего загружено регионов:" << m_regions.size();
 
     emit regionsChanged();
-
 }
 
 void MapData::findBounds(const QJsonArray &coordinates, double &minX, double &maxX,
@@ -165,7 +158,6 @@ QVariantList MapData::coordinatesToPath(const QJsonArray &coordinates,
     double rangeX = maxX - minX;
     double rangeY = maxY - minY;
 
-
     if (rangeX == 0 || rangeY == 0)
     {
         qDebug() << "Некорректный диапазон координат";
@@ -207,7 +199,7 @@ QVariantList MapData::coordinatesToPath(const QJsonArray &coordinates,
                 double y = coordArray[1].toDouble();
 
                 // Нормализуем и масштабируем координаты
-                double normalizedX = (x - minX) * scale + padding ;
+                double normalizedX = (x - minX) * scale + padding;
                 // Инвертируем Y, так как SVG координаты идут сверху вниз
                 double normalizedY = targetHeight - ((y - minY) * scale + padding);
 
@@ -238,8 +230,203 @@ void MapData::setSelectedRegion(const QString &regionId)
     if (m_selectedRegion != regionId)
     {
         m_selectedRegion = regionId;
-        // Нужно регион добавлять в конец, чтобы он отрисовывалс поверх всех
-        emit selectedRegionChanged();
+        emit selectedRegionChanged(regionId);
         qDebug() << "Выбран регион:" << regionId;
     }
+}
+
+// ============================================================================
+// РЕАЛИЗАЦИЯ НОВЫХ МЕТОДОВ
+// ============================================================================
+
+QVariantMap MapData::getRegionById(const QString &regionId) const
+{
+    for (const QVariant &var : m_regions)
+    {
+        QVariantMap region = var.toMap();
+        if (region["id"].toString() == regionId)
+        {
+            return region;
+        }
+    }
+    return QVariantMap(); // Возвращаем пустой map если не найден
+}
+
+void MapData::updateRegionStatus(const QString &regionId, const QString &status)
+{
+    for (int i = 0; i < m_regions.size(); ++i)
+    {
+        QVariantMap region = m_regions[i].toMap();
+        if (region["id"].toString() == regionId)
+        {
+            QString oldStatus = region["status"].toString();
+            if (oldStatus != status)
+            {
+                region["status"] = status;
+                m_regions[i] = region;
+
+                emit regionStatusChanged(regionId, status);
+                emit regionsChanged(); // Для перерисовки карты
+                qDebug() << "Статус региона" << regionId << "изменен на:" << status;
+            }
+            return;
+        }
+    }
+    qWarning() << "Регион с ID" << regionId << "не найден";
+}
+
+void MapData::clearSelection()
+{
+    if (!m_selectedRegion.isEmpty())
+    {
+        m_selectedRegion = "";
+        emit selectedRegionChanged("");
+        qDebug() << "Выбор региона очищен";
+    }
+}
+
+void MapData::notifyRegionClicked(const QString &regionId, const QString &regionName)
+{
+    qDebug() << "Region clicked:" << regionName << "(" << regionId << ")";
+    emit regionClicked(regionId, regionName);
+}
+
+// ============================================================================
+// ОПТИМИЗАЦИЯ: Вычисления геометрии в C++
+// ============================================================================
+
+void MapData::prepareRegionGeometry()
+{
+    qDebug() << "Подготовка геометрии регионов для быстрого поиска...";
+
+    m_regionGeometry.clear();
+    m_regionGeometry.reserve(m_regions.size());
+
+    for (const QVariant &var : m_regions) {
+        QVariantMap region = var.toMap();
+
+        RegionGeometry geometry;
+        geometry.id = region["id"].toString();
+        geometry.name = region["name"].toString();
+        geometry.status = region["status"].toString();
+        geometry.postalCode = region["postal-code"].toString();
+
+        // Парсим SVG пути обратно в точки
+        QVariantList paths = region["paths"].toList();
+        for (const QVariant &pathVar : paths) {
+            QString pathString = pathVar.toString();
+            QVector<QPointF> polygon;
+
+            // Парсим SVG команды M/L/Z используя QRegularExpression
+            QRegularExpression re("([MLZ])");
+            QStringList tokens = pathString.replace(re, "|\\1 ").split("|");
+
+            for (const QString &token : tokens) {
+                QString trimmed = token.trimmed();
+                if (trimmed.isEmpty()) continue;
+
+                QStringList parts = trimmed.split(QRegularExpression("\\s+"));
+                QString cmd = parts[0];
+
+                if ((cmd == "M" || cmd == "L") && parts.size() >= 3) {
+                    qreal x = parts[1].toDouble();
+                    qreal y = parts[2].toDouble();
+                    polygon.append(QPointF(x, y));
+                }
+            }
+
+            if (!polygon.isEmpty()) {
+                geometry.polygons.append(polygon);
+            }
+        }
+
+        // Вычисляем bounding box для быстрой предварительной проверки
+        geometry.boundingBox = calculateBoundingBox(geometry.polygons);
+
+        m_regionGeometry.append(geometry);
+    }
+
+    qDebug() << "Геометрия подготовлена для" << m_regionGeometry.size() << "регионов";
+}
+
+QVariantMap MapData::getRegionAtPoint(qreal x, qreal y, qreal scale, qreal offsetX, qreal offsetY) const
+{
+    if (m_regionGeometry.isEmpty()) {
+        qWarning() << "Геометрия регионов не подготовлена! Вызовите prepareRegionGeometry()";
+        return QVariantMap();
+    }
+
+    // Преобразуем координаты клика в координаты карты
+    QPointF mapPoint((x - offsetX) / scale, (y - offsetY) / scale);
+
+    // Проходим по регионам в обратном порядке (последние нарисованные сверху)
+    for (int i = m_regionGeometry.size() - 1; i >= 0; --i) {
+        const RegionGeometry &geometry = m_regionGeometry[i];
+
+        // Быстрая проверка через bounding box
+        if (!geometry.boundingBox.contains(mapPoint)) {
+            continue;
+        }
+
+        // Точная проверка через ray casting для каждого полигона
+        for (const QVector<QPointF> &polygon : geometry.polygons) {
+            if (isPointInPolygon(mapPoint, polygon)) {
+                // Нашли регион! Возвращаем информацию
+                QVariantMap result;
+                result["id"] = geometry.id;
+                result["name"] = geometry.name;
+                result["status"] = geometry.status;
+                result["postalCode"] = geometry.postalCode;
+                return result;
+            }
+        }
+    }
+
+    return QVariantMap(); // Не нашли регион
+}
+
+bool MapData::isPointInPolygon(const QPointF &point, const QVector<QPointF> &polygon) const
+{
+    if (polygon.size() < 3) {
+        return false;
+    }
+
+    // Ray casting algorithm - быстрая реализация в C++
+    bool inside = false;
+    int j = polygon.size() - 1;
+
+    for (int i = 0; i < polygon.size(); j = i++) {
+        const QPointF &pi = polygon[i];
+        const QPointF &pj = polygon[j];
+
+        if (((pi.y() > point.y()) != (pj.y() > point.y())) &&
+            (point.x() < (pj.x() - pi.x()) * (point.y() - pi.y()) / (pj.y() - pi.y()) + pi.x())) {
+            inside = !inside;
+        }
+    }
+
+    return inside;
+}
+
+QRectF MapData::calculateBoundingBox(const QVector<QVector<QPointF>> &polygons) const
+{
+    if (polygons.isEmpty()) {
+        return QRectF();
+    }
+
+    qreal minX = std::numeric_limits<qreal>::max();
+    qreal maxX = std::numeric_limits<qreal>::lowest();
+    qreal minY = std::numeric_limits<qreal>::max();
+    qreal maxY = std::numeric_limits<qreal>::lowest();
+
+    for (const QVector<QPointF> &polygon : polygons) {
+        for (const QPointF &point : polygon) {
+            minX = qMin(minX, point.x());
+            maxX = qMax(maxX, point.x());
+            minY = qMin(minY, point.y());
+            maxY = qMax(maxY, point.y());
+        }
+    }
+
+    return QRectF(QPointF(minX, minY), QPointF(maxX, maxY));
 }

@@ -5,22 +5,20 @@ import MapData 1.0
 
 Item {
     id: mapComponent
-    // Автоматически заполняет родительский контейнер
 
     // Публичные свойства для настройки
     property color backgroundColor: "#f5f5f5"
     property color borderColor: "#bdc3c7"
 
     // Цвета по умолчанию для регионов
-    property color defaultColor: "#5CA8FF"       // холодный синий
-    property color warningColor: "#FFB84D"       // мягкий оранжевый
-    property color dangerColor: "#FF5C5C"        // чистый, но не кислотный красный
+    property color defaultColor: "#5CA8FF"
+    property color warningColor: "#FFB84D"
+    property color dangerColor: "#FF5C5C"
 
     // Цвета для активных (выбранных) регионов
-    property color defaultActiveColor: "#1E7FFF" // насыщенный синий
-    property color warningActiveColor: "#FF9500" // глубокий янтарный оранжевый
-    property color dangerActiveColor: "#E53935"  // насыщенный, но сбалансированный красный
-
+    property color defaultActiveColor: "#1E7FFF"
+    property color warningActiveColor: "#FF9500"
+    property color dangerActiveColor: "#E53935"
 
     // Цвета обводки
     property color strokeColor: "#ffffff"
@@ -28,14 +26,12 @@ Item {
     property real strokeWidth: 1
     property real activeStrokeWidth: 2
 
-
     // Сигналы для внешнего использования
     signal regionClicked(string regionId, string regionName)
     signal regionHovered(string regionId, string regionName)
     signal regionExited()
-    width: 640
 
-    // Таймер для debounce при изменении размера (на уровне компонента)
+    // Таймер для debounce при изменении размера
     Timer {
         id: resizeTimer
         interval: 150
@@ -46,8 +42,6 @@ Item {
         }
     }
 
-
-
     Canvas {
         id: mapCanvas
         anchors.fill: parent
@@ -57,19 +51,10 @@ Item {
         renderTarget: Canvas.FramebufferObject
 
         // Внутренние свойства для масштабирования
-        property real mapAspectRatio: 1000 / 1000
         property real actualScale: 1.0
         property real offsetX: 0
         property real offsetY: 0
-
-        // Флаг для предотвращения множественных перерисовок
         property bool isPainting: false
-
-        // Внутренние свойства canvas
-        property var regionPaths: []
-
-
-
 
         onPaint: {
             // Защита от повторного входа
@@ -100,14 +85,7 @@ Item {
                 return
             }
 
-            if (!mapData.regions) {
-                console.warn("mapData.regions не определен!")
-                drawErrorMessage(ctx, "Данные регионов отсутствуют")
-                isPainting = false
-                return
-            }
-
-            if (mapData.regions.length === 0) {
+            if (!mapData.regions || mapData.regions.length === 0) {
                 console.warn("mapData.regions пуст!")
                 drawErrorMessage(ctx, "Нет данных для отображения")
                 isPainting = false
@@ -124,9 +102,6 @@ Item {
             ctx.save()
             ctx.translate(offsetX, offsetY)
             ctx.scale(actualScale, actualScale)
-
-            // Очищаем информацию о путях
-            regionPaths = []
 
             var drawnCount = 0
             var totalPaths = 0
@@ -166,21 +141,14 @@ Item {
                 // Рисуем все пути региона
                 for (var j = 0; j < paths.length; j++) {
                     var pathDrawn = drawPath(
-                                ctx,
-                                paths[j],
-                                fillColor,
-                                currentStrokeWidth,
-                                currentStrokeColor
-                                )
+                        ctx,
+                        paths[j],
+                        fillColor,
+                        currentStrokeWidth,
+                        currentStrokeColor
+                    )
 
                     if (pathDrawn) {
-                        regionPaths.push({
-                                             id: region.id,
-                                             name: region.name,
-                                             status: region.status,
-                                             postalCode: region["postal-code"] || "",
-                                             pathString: paths[j]
-                                         })
                         drawnCount++
                     }
                 }
@@ -200,7 +168,6 @@ Item {
             var baseMapWidth = 1000
             var baseMapHeight = 700
 
-
             var availableWidth = width
             var availableHeight = height
 
@@ -213,10 +180,9 @@ Item {
 
             offsetX = (width - scaledWidth) / 2
             offsetY = (height - scaledHeight) / 2
-            console.log(offsetX, offsetY)
         }
 
-        // Функция рисования пути с оптимизацией
+        // Функция рисования пути
         function drawPath(ctx, pathString, fillColor, lineWidth, strokeColor) {
             if (!pathString || pathString.length === 0) {
                 return false
@@ -277,7 +243,7 @@ Item {
             ctx.fillText(message, width / 2, height / 2)
         }
 
-        // Обработка кликов по карте
+        // Обработка кликов и hover
         MouseArea {
             anchors.fill: parent
             hoverEnabled: true
@@ -285,23 +251,35 @@ Item {
 
             property bool clickInProgress: false
             property var currentHoveredRegion: null
-            property int hoverCheckCounter: 0
-            width: 640
 
             onClicked: function(mouse) {
                 if (clickInProgress) return
                 clickInProgress = true
 
                 console.log("Клик на координатах:", mouse.x, mouse.y)
-                var clickedRegion = mapCanvas.getRegionAtPoint(mouse.x, mouse.y)
-                if (clickedRegion) {
+
+                // ОПТИМИЗАЦИЯ: Используем C++ метод для поиска региона
+                var clickedRegion = mapData.getRegionAtPoint(
+                    mouse.x, mouse.y,
+                    mapCanvas.actualScale,
+                    mapCanvas.offsetX,
+                    mapCanvas.offsetY
+                )
+
+                if (clickedRegion && clickedRegion.id) {
                     console.log("Клик по региону:", clickedRegion.name, clickedRegion.id)
-                    if (mapData) {
-                        mapData.selectedRegion = clickedRegion.id
-                    }
+
+                    // Устанавливаем выбранный регион
+                    mapData.selectedRegion = clickedRegion.id
+
+                    // Уведомляем C++ о клике (испускает сигнал regionClicked)
+                    mapData.notifyRegionClicked(clickedRegion.id, clickedRegion.name)
+
+                    // Испускаем QML сигнал для обратной совместимости
                     mapComponent.regionClicked(clickedRegion.id, clickedRegion.name)
                 } else {
-                    console.log("Клик мимо региона")
+                    console.log("Клик мимо региона - очищаем выбор")
+                    mapData.clearSelection()
                 }
 
                 clickInProgress = false
@@ -320,9 +298,15 @@ Item {
                     if (!hasPending) return
                     hasPending = false
 
-                    var hoveredRegion = mapCanvas.getRegionAtPoint(pendingX, pendingY)
+                    // ОПТИМИЗАЦИЯ: Используем C++ метод для поиска региона
+                    var hoveredRegion = mapData.getRegionAtPoint(
+                        pendingX, pendingY,
+                        mapCanvas.actualScale,
+                        mapCanvas.offsetX,
+                        mapCanvas.offsetY
+                    )
 
-                    if (hoveredRegion) {
+                    if (hoveredRegion && hoveredRegion.id) {
                         parent.cursorShape = Qt.PointingHandCursor
 
                         if (!parent.currentHoveredRegion || parent.currentHoveredRegion.id !== hoveredRegion.id) {
@@ -360,107 +344,14 @@ Item {
             }
         }
 
-        // Функция для определения региона по координатам клика
-        function getRegionAtPoint(x, y) {
-            // Проверяем, что у нас есть данные для проверки
-            if (regionPaths.length === 0) {
-                return null
-            }
-
-            // Преобразуем координаты клика обратно в координаты карты
-            var mapX = (x - offsetX) / actualScale
-            var mapY = (y - offsetY) / actualScale
-
-            // Проходим по всем регионам в обратном порядке (последние нарисованные сверху)
-            for (var i = regionPaths.length - 1; i >= 0; i--) {
-                var regionInfo = regionPaths[i]
-
-                // Сначала быстрая проверка через bounding box
-                if (isInBoundingBox(mapX, mapY, regionInfo.pathString)) {
-                    // Затем точная проверка через ray casting
-                    if (isPointInRegion(mapX, mapY, regionInfo.pathString)) {
-                        return regionInfo
-                    }
-                }
-            }
-            return null
-        }
-
-        // Алгоритм ray casting для проверки точки в полигоне
-        function isPointInRegion(px, py, pathString) {
-            if (!pathString) return false
-
-            var tokens = pathString.replace(/([MLZ])/g, "|$1 ").split("|")
-            var points = []
-
-            for (var i = 0; i < tokens.length; i++) {
-                var token = tokens[i].trim()
-                if (!token) continue
-
-                var parts = token.split(/\s+/)
-                var cmd = parts[0]
-
-                if ((cmd === 'M' || cmd === 'L') && parts.length >= 3) {
-                    var x = parseFloat(parts[1])
-                    var y = parseFloat(parts[2])
-                    if (!isNaN(x) && !isNaN(y)) {
-                        points.push({x: x, y: y})
-                    }
-                }
-            }
-
-            if (points.length < 3) return false
-
-            // Ray casting algorithm
-            var inside = false
-            for (var i = 0, j = points.length - 1; i < points.length; j = i++) {
-                var xi = points[i].x, yi = points[i].y
-                var xj = points[j].x, yj = points[j].y
-
-                var intersect = ((yi > py) !== (yj > py))
-                        && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)
-                if (intersect) inside = !inside
-            }
-
-            return inside
-        }
-
-        // Дополнительная функция для проверки - bounding box test (быстрая предварительная проверка)
-        function isInBoundingBox(px, py, pathString) {
-            if (!pathString) return false
-
-            var tokens = pathString.replace(/([MLZ])/g, "|$1 ").split("|")
-            var minX = Infinity, maxX = -Infinity
-            var minY = Infinity, maxY = -Infinity
-
-            for (var i = 0; i < tokens.length; i++) {
-                var token = tokens[i].trim()
-                if (!token) continue
-
-                var parts = token.split(/\s+/)
-                var cmd = parts[0]
-
-                if ((cmd === 'M' || cmd === 'L') && parts.length >= 3) {
-                    var x = parseFloat(parts[1])
-                    var y = parseFloat(parts[2])
-                    if (!isNaN(x) && !isNaN(y)) {
-                        minX = Math.min(minX, x)
-                        maxX = Math.max(maxX, x)
-                        minY = Math.min(minY, y)
-                        maxY = Math.max(maxY, y)
-                    }
-                }
-            }
-
-            return px >= minX && px <= maxX && py >= minY && py <= maxY
-        }
-
-        // Подключение к сигналам MapData с оптимизацией
+        // Подключение к сигналам MapData
         Connections {
             target: mapData
 
             onRegionsChanged: {
                 console.log("Сигнал: regionsChanged")
+                // Подготавливаем оптимизированную геометрию для быстрого поиска
+                mapData.prepareRegionGeometry()
                 mapCanvas.requestPaint()
             }
 
@@ -477,6 +368,8 @@ Item {
             console.log("Размеры canvas:", width, "x", height)
             if (mapData) {
                 console.log("MapData доступен, регионов:", mapData.regions ? mapData.regions.length : 0)
+                // Подготавливаем геометрию при инициализации
+                mapData.prepareRegionGeometry()
             } else {
                 console.warn("MapData не доступен при инициализации Canvas!")
             }
@@ -498,7 +391,6 @@ Item {
             }
         }
     }
-
 
     Component.onCompleted: {
         console.log("=== MapComponent инициализирован ===")
