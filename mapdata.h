@@ -10,6 +10,8 @@
 #include <QStringList>
 #include <QPointF>
 #include <QRectF>
+#include <QVector>
+
 
 class MapData : public QObject
 {
@@ -74,3 +76,4 @@ private:
 };
 
 #endif // MAPDATA_H
+
